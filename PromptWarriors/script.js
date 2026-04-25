@@ -38,6 +38,7 @@ class StateManager {
         this.history = [];
         this.currentQuizAnswer = null;
         this.isWaitingForQuizAnswer = false;
+        this.incorrectAnswersCount = 0;
     }
 
     load() {
@@ -74,6 +75,7 @@ class StateManager {
     }
 
     levelUp() {
+        this.incorrectAnswersCount = 0; // Reset on correct answer
         if (this.difficulty === 'beginner') {
             this.difficulty = 'intermediate';
             return "You got it! Let's level up to Intermediate.";
@@ -86,16 +88,29 @@ class StateManager {
     }
 
     levelDown() {
-        if (this.difficulty === 'advanced') {
-            this.difficulty = 'intermediate';
-            return "Not quite. Let's step back to Intermediate and break it down more.";
-        } else if (this.difficulty === 'intermediate') {
-            this.difficulty = 'beginner';
-            return "That's incorrect. Let's go back to Beginner basics.";
-        } else {
+        this.incorrectAnswersCount++;
+        let shouldRevise = false;
+        let msg = "";
+
+        if (this.incorrectAnswersCount >= 2) {
+            shouldRevise = true;
             this.isEli5 = true;
-            return "Nope! Let me explain it like you're 5 to make it super clear.";
+            this.difficulty = 'beginner';
+            msg = "It looks like you're struggling with this. I suggest we revise the basics. Let me give you a much simpler explanation.";
+        } else {
+            if (this.difficulty === 'advanced') {
+                this.difficulty = 'intermediate';
+                msg = "Not quite. Let's step back to Intermediate and break it down more.";
+            } else if (this.difficulty === 'intermediate') {
+                this.difficulty = 'beginner';
+                msg = "That's incorrect. Let's go back to Beginner basics.";
+            } else {
+                this.isEli5 = true;
+                msg = "Nope! Let me explain it like you're 5 to make it super clear.";
+            }
         }
+        
+        return { msg, shouldRevise };
     }
 }
 
@@ -118,22 +133,37 @@ class UIManager {
             sendBtn: document.getElementById('send-btn'),
             micBtn: document.getElementById('mic-btn'),
             voiceStatus: document.getElementById('voice-status'),
-            historyList: document.getElementById('history-list')
+            historyList: document.getElementById('history-list'),
+            scoreFeedback: document.getElementById('score-feedback')
         };
         
         // Cache active typing indicator element to avoid querying the DOM
         this.activeTypingIndicator = null;
     }
 
-    updateScoreDisplay(score, maxScore, difficulty) {
+    updateScoreDisplay(score, maxScore, difficulty, feedbackMsg = null, feedbackType = "") {
         // Use requestAnimationFrame for smooth UI updates
         requestAnimationFrame(() => {
+            const oldScore = parseInt(this.elements.scoreDisplay.textContent) || 0;
             this.elements.scoreDisplay.textContent = score;
+            
+            if (score > oldScore) {
+                this.elements.scoreDisplay.classList.remove('score-pop');
+                void this.elements.scoreDisplay.offsetWidth; // trigger reflow
+                this.elements.scoreDisplay.classList.add('score-pop');
+            }
+            
             const progress = Math.min((score / maxScore) * 100, 100);
             this.elements.progressBar.style.width = `${progress}%`;
+            this.elements.progressBar.parentElement.setAttribute('aria-valuenow', progress);
             
             this.elements.levelDisplay.className = `level-badge ${difficulty}`;
             this.elements.levelDisplay.textContent = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+            
+            if (this.elements.scoreFeedback && feedbackMsg) {
+                this.elements.scoreFeedback.textContent = feedbackMsg;
+                this.elements.scoreFeedback.className = `score-feedback ${feedbackType}`;
+            }
         });
     }
 
@@ -369,7 +399,7 @@ class AppController {
         this.state.load();
         
         // Initial UI state setup
-        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty);
+        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty, "Ready to learn!", "");
         this.ui.renderHistory(this.state.history);
 
         // Bind Events globally and use delegation where possible
@@ -407,6 +437,7 @@ class AppController {
         this.state.topic = topic;
         this.state.difficulty = this.ui.elements.difficultySelect.value;
         this.state.isEli5 = this.ui.elements.eli5Toggle.checked;
+        this.state.incorrectAnswersCount = 0; // Reset on new topic
         
         // Only re-render history if a new topic was actually added
         if (this.state.addToHistory(topic)) {
@@ -593,7 +624,7 @@ class AppController {
         const difficultyMsg = this.state.levelUp();
         
         this.ui.elements.difficultySelect.value = this.state.difficulty;
-        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty);
+        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty, "Great job! You're improving!", "positive");
         
         const frag = document.createDocumentFragment();
         const p1 = document.createElement('p');
@@ -617,14 +648,16 @@ class AppController {
     }
 
     async handleIncorrectAnswer() {
-        const simplifyMsg = this.state.levelDown();
+        const { msg, shouldRevise } = this.state.levelDown();
         
         if (this.state.isEli5) {
             this.ui.elements.eli5Toggle.checked = true;
         }
         
         this.ui.elements.difficultySelect.value = this.state.difficulty;
-        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty);
+        
+        const feedbackMsg = shouldRevise ? "Try revising this concept." : "Keep trying! You'll get it.";
+        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty, feedbackMsg, "warning");
         
         const frag = document.createDocumentFragment();
         const p1 = document.createElement('p');
@@ -634,10 +667,19 @@ class AppController {
         p1.appendChild(strong);
         
         const p2 = document.createElement('p');
-        p2.textContent = simplifyMsg;
+        p2.textContent = msg;
         
         frag.appendChild(p1);
         frag.appendChild(p2);
+        
+        if (shouldRevise) {
+            const p3 = document.createElement('p');
+            p3.style.color = "var(--accent-color)";
+            const em = document.createElement('em');
+            em.textContent = "Tip: Try reading the step-by-step breakdown below carefully, or ask me for an analogy.";
+            p3.appendChild(em);
+            frag.appendChild(p3);
+        }
         
         this.ui.appendMessage('ai', frag);
         
@@ -680,8 +722,10 @@ function runBasicTests() {
         state.levelDown();
         console.assert(state.difficulty === 'intermediate', "Level down failed to revert to intermediate");
         
-        state.levelDown();
+        state.levelDown(); // Second incorrect answer
         console.assert(state.difficulty === 'beginner', "Level down failed to revert to beginner");
+        console.assert(state.isEli5 === true, "Should force ELI5 on 2+ incorrect answers");
+        console.assert(state.incorrectAnswersCount === 2, "Incorrect answer count should be 2");
         
         console.log("%c All basic tests passed! ", "color: #10b981; font-weight: bold;");
     } catch (e) {
