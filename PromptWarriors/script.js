@@ -39,6 +39,12 @@ class StateManager {
         this.currentQuizAnswer = null;
         this.isWaitingForQuizAnswer = false;
         this.incorrectAnswersCount = 0;
+
+        // Learning Path state
+        this.completedTopics = [];      // Topic IDs marked as completed
+        this.topicScores = {};           // { topicId: { attempts, correct, bestDifficulty } }
+        this.currentPath = [];           // Ordered list of upcoming topic IDs
+        this.activeLearningPath = '';    // Current category name
     }
 
     load() {
@@ -48,6 +54,10 @@ class StateManager {
                 const parsed = JSON.parse(saved);
                 this.score = parsed.score || 0;
                 this.history = parsed.history || [];
+                this.completedTopics = parsed.completedTopics || [];
+                this.topicScores = parsed.topicScores || {};
+                this.currentPath = parsed.currentPath || [];
+                this.activeLearningPath = parsed.activeLearningPath || '';
             }
         } catch (e) {
             console.error("Failed to load state", e);
@@ -58,7 +68,11 @@ class StateManager {
         try {
             localStorage.setItem('learnAiState', JSON.stringify({
                 score: this.score,
-                history: this.history
+                history: this.history,
+                completedTopics: this.completedTopics,
+                topicScores: this.topicScores,
+                currentPath: this.currentPath,
+                activeLearningPath: this.activeLearningPath
             }));
         } catch (e) {
             console.error("Failed to save state", e);
@@ -112,6 +126,50 @@ class StateManager {
         
         return { msg, shouldRevise };
     }
+
+    /**
+     * Mark a topic as completed and record performance.
+     */
+    completeTopic(topicId, wasCorrect) {
+        if (!this.completedTopics.includes(topicId)) {
+            this.completedTopics.push(topicId);
+        }
+        if (!this.topicScores[topicId]) {
+            this.topicScores[topicId] = { attempts: 0, correct: 0, bestDifficulty: 'beginner' };
+        }
+        this.topicScores[topicId].attempts++;
+        if (wasCorrect) {
+            this.topicScores[topicId].correct++;
+            // Track highest difficulty achieved
+            const tiers = ['beginner', 'intermediate', 'advanced'];
+            const currentIdx = tiers.indexOf(this.topicScores[topicId].bestDifficulty);
+            const newIdx = tiers.indexOf(this.difficulty);
+            if (newIdx > currentIdx) {
+                this.topicScores[topicId].bestDifficulty = this.difficulty;
+            }
+        }
+        this.save();
+    }
+
+    /**
+     * Returns performance rating based on recent topic scores.
+     * "excelling" | "steady" | "struggling"
+     */
+    getPerformanceRating() {
+        const ids = Object.keys(this.topicScores);
+        if (ids.length === 0) return 'steady';
+        const recent = ids.slice(-5);
+        let totalAttempts = 0, totalCorrect = 0;
+        recent.forEach(id => {
+            totalAttempts += this.topicScores[id].attempts;
+            totalCorrect += this.topicScores[id].correct;
+        });
+        if (totalAttempts === 0) return 'steady';
+        const accuracy = totalCorrect / totalAttempts;
+        if (accuracy >= 0.75) return 'excelling';
+        if (accuracy >= 0.4) return 'steady';
+        return 'struggling';
+    }
 }
 
 // ==========================================
@@ -134,7 +192,15 @@ class UIManager {
             micBtn: document.getElementById('mic-btn'),
             voiceStatus: document.getElementById('voice-status'),
             historyList: document.getElementById('history-list'),
-            scoreFeedback: document.getElementById('score-feedback')
+            scoreFeedback: document.getElementById('score-feedback'),
+            // Learning Path elements
+            learningPathSection: document.getElementById('learning-path-section'),
+            pathProgress: document.getElementById('path-progress'),
+            nextTopicCard: document.getElementById('next-topic-card'),
+            nextTopicBtn: document.getElementById('next-topic-btn'),
+            nextTopicName: document.getElementById('next-topic-name'),
+            nextTopicReason: document.getElementById('next-topic-reason'),
+            performanceBadge: document.getElementById('performance-badge')
         };
         
         // Cache active typing indicator element to avoid querying the DOM
@@ -190,6 +256,98 @@ class UIManager {
     }
 
     /**
+     * Render the full learning path timeline in the sidebar.
+     * @param {Array<{id, name, status}>} pathNodes - ordered list of nodes
+     */
+    renderLearningPath(pathNodes) {
+        if (!this.elements.pathProgress || !this.elements.learningPathSection) return;
+        requestAnimationFrame(() => {
+            this.elements.pathProgress.innerHTML = '';
+            const frag = document.createDocumentFragment();
+
+            pathNodes.forEach((node, idx) => {
+                const nodeDiv = document.createElement('div');
+                nodeDiv.className = `path-node path-${node.status}`;
+
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'path-node-icon';
+                if (node.status === 'completed') {
+                    iconSpan.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+                } else if (node.status === 'current') {
+                    iconSpan.innerHTML = '<i class="fa-solid fa-circle-dot"></i>';
+                } else {
+                    iconSpan.innerHTML = '<i class="fa-regular fa-circle"></i>';
+                }
+                nodeDiv.appendChild(iconSpan);
+
+                const label = document.createElement('span');
+                label.className = 'path-node-label';
+                label.textContent = node.name;
+                nodeDiv.appendChild(label);
+
+                frag.appendChild(nodeDiv);
+
+                // Add connector line between nodes
+                if (idx < pathNodes.length - 1) {
+                    const connector = document.createElement('div');
+                    connector.className = `path-connector ${node.status === 'completed' ? 'connector-done' : ''}`;
+                    frag.appendChild(connector);
+                }
+            });
+
+            this.elements.pathProgress.appendChild(frag);
+            this.elements.learningPathSection.style.display = 'block';
+        });
+    }
+
+    /**
+     * Show the "Recommended Next Topic" card with performance badge and reason.
+     * @param {string} topicName
+     * @param {string} reason
+     * @param {string} performanceRating - "excelling"|"steady"|"struggling"
+     * @param {Function} onClickCallback
+     */
+    showNextTopicRecommendation(topicName, reason, performanceRating, onClickCallback) {
+        if (!this.elements.nextTopicCard) return;
+        requestAnimationFrame(() => {
+            // Performance badge
+            const badgeMap = {
+                excelling: { text: '🔥 Excelling', cls: 'perf-excelling' },
+                steady: { text: '📈 Steady', cls: 'perf-steady' },
+                struggling: { text: '💪 Keep Going', cls: 'perf-struggling' }
+            };
+            const badge = badgeMap[performanceRating] || badgeMap.steady;
+            this.elements.performanceBadge.textContent = badge.text;
+            this.elements.performanceBadge.className = `performance-badge ${badge.cls}`;
+
+            // Topic name & reason
+            this.elements.nextTopicName.textContent = topicName;
+            this.elements.nextTopicReason.textContent = reason;
+
+            // Button click
+            const newBtn = this.elements.nextTopicBtn.cloneNode(true);
+            this.elements.nextTopicBtn.replaceWith(newBtn);
+            this.elements.nextTopicBtn = newBtn;
+            // Restore inner content after clone
+            newBtn.innerHTML = '';
+            const span = document.createElement('span');
+            span.id = 'next-topic-name';
+            span.textContent = topicName;
+            newBtn.appendChild(span);
+            const icon = document.createElement('i');
+            icon.className = 'fa-solid fa-arrow-right';
+            newBtn.appendChild(icon);
+            this.elements.nextTopicName = span;
+
+            newBtn.addEventListener('click', () => {
+                onClickCallback(topicName);
+            });
+
+            this.elements.nextTopicCard.style.display = 'block';
+        });
+    }
+
+    /**
      * @param {string} sender 'ai' or 'user'
      * @param {HTMLElement | DocumentFragment | string} contentElement 
      * @param {boolean} isTyping 
@@ -198,8 +356,10 @@ class UIManager {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${sender}-message${isTyping ? ' typing-msg' : ''}`;
         
-        const avatarIcon = sender === 'ai' ? 'fa-robot' : 'fa-user';
-        msgDiv.innerHTML = `<div class="avatar"><i class="fa-solid ${avatarIcon}"></i></div>`;
+        if (sender !== 'system') {
+            const avatarIcon = sender === 'ai' ? 'fa-robot' : 'fa-user';
+            msgDiv.innerHTML = `<div class="avatar"><i class="fa-solid ${avatarIcon}"></i></div>`;
+        }
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
@@ -223,6 +383,14 @@ class UIManager {
 
     appendMessage(sender, contentElement) {
         this._appendMessageWrapper(sender, contentElement);
+    }
+
+    appendSystemMessage(text) {
+        const frag = document.createDocumentFragment();
+        const p = document.createElement('span');
+        p.innerHTML = `<i class="fa-solid fa-bolt"></i> ${text}`;
+        frag.appendChild(p);
+        this.appendMessage('system', frag);
     }
 
     showTypingIndicator() {
@@ -324,14 +492,14 @@ class MockAIService {
                 if (answerLower.length < 5) {
                     return resolve({
                         isCorrect: false,
-                        feedback: "Incorrect.\n\nYou didn't provide enough detail. It seems you might be missing the core concept.\n\nHint: Try to explain the 'how' or 'why' behind the topic. Please try again!"
+                        feedback: "Incorrect.\n\nYou didn't provide enough detail. It seems you might be missing the core concept.\n\nHint: Try to explain the 'how' or 'why' behind the topic.\n\nTry again!"
                     });
                 }
                 
                 if (answerLower.includes("don't know") || answerLower.includes("not sure")) {
                     return resolve({
                         isCorrect: false,
-                        feedback: "Incorrect.\n\nIt looks like you haven't attempted to apply the concept yet.\n\nHint: Review the step-by-step breakdown above and take a guess. Please try again!"
+                        feedback: "Incorrect.\n\nIt looks like you haven't attempted to apply the concept yet.\n\nHint: Review the step-by-step breakdown above and take a guess.\n\nTry again!"
                     });
                 }
                 
@@ -341,18 +509,277 @@ class MockAIService {
                 if (isCorrect) {
                     return resolve({
                         isCorrect: true,
-                        feedback: `Correct!\n\nYou successfully identified the core mechanics of ${topic}. \n\nDeeper Insight: In advanced real-world applications, this concept is often combined with other modular patterns to massively improve scalability.`
+                        feedback: `Correct!\n\nYou successfully identified the core mechanics of ${topic}. \n\nDeeper Insight: In advanced real-world applications, this concept is often combined with other modular patterns to massively improve scalability.\n\nReady for next?`
                     });
                 } else {
                     return resolve({
                         isCorrect: false,
-                        feedback: `Incorrect.\n\nYour explanation misses the primary mechanism of how ${topic} operates. You might be confusing its behavior with a similar but distinct concept.\n\nHint: Focus strictly on the main function described in the lesson. Please try again!`
+                        feedback: `Incorrect.\n\nYour explanation misses the primary mechanism of how ${topic} operates. You might be confusing its behavior with a similar but distinct concept.\n\nHint: Focus strictly on the main function described in the lesson.\n\nTry again!`
                     });
                 }
             }, 800);
         });
     }
+
+    /**
+     * Find a graph node by matching a topic string.
+     * Matches against both the key (dashes → spaces) and the node's display name.
+     */
+    findGraphNode(topicStr) {
+        const normalized = topicStr.toLowerCase().trim();
+        for (const key in MockAIService.KNOWLEDGE_GRAPH) {
+            const node = MockAIService.KNOWLEDGE_GRAPH[key];
+            const keySpaced = key.replace(/-/g, ' ');
+            const nameLower = node.name.toLowerCase();
+            if (normalized === keySpaced || normalized === nameLower
+                || normalized.includes(keySpaced) || keySpaced.includes(normalized)
+                || normalized.includes(nameLower) || nameLower.includes(normalized)) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get a single recommended next topic, factoring in completed topics and performance.
+     * @param {string} currentTopic
+     * @param {string[]} completedTopics
+     * @param {string} performanceRating - "excelling" | "steady" | "struggling"
+     * @returns {Promise<{name: string, reason: string}>}
+     */
+    async getRecommendation(currentTopic, completedTopics = [], performanceRating = 'steady') {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                const node = this.findGraphNode(currentTopic);
+                const completedLower = completedTopics.map(t => t.toLowerCase().trim());
+
+                if (node && node.nextTopics.length > 0) {
+                    // Filter out completed topics
+                    const available = node.nextTopics.filter(id => {
+                        const n = MockAIService.KNOWLEDGE_GRAPH[id];
+                        return n && !completedLower.includes(n.name.toLowerCase());
+                    });
+
+                    if (available.length > 0) {
+                        let chosenId;
+                        if (performanceRating === 'struggling' && node.prerequisites.length > 0) {
+                            // Suggest revisiting a prerequisite
+                            const prereq = node.prerequisites.find(pid => {
+                                const pn = MockAIService.KNOWLEDGE_GRAPH[pid];
+                                return pn && !completedLower.includes(pn.name.toLowerCase());
+                            });
+                            if (prereq) {
+                                const pn = MockAIService.KNOWLEDGE_GRAPH[prereq];
+                                return resolve({ name: pn.name, reason: `Let's revisit the foundations before moving on.` });
+                            }
+                        }
+                        if (performanceRating === 'excelling') {
+                            // Pick the harder option
+                            const tiers = ['beginner', 'intermediate', 'advanced'];
+                            available.sort((a, b) => {
+                                const ta = MockAIService.KNOWLEDGE_GRAPH[a];
+                                const tb = MockAIService.KNOWLEDGE_GRAPH[b];
+                                return tiers.indexOf(tb.difficultyTier) - tiers.indexOf(ta.difficultyTier);
+                            });
+                        }
+                        chosenId = available[0];
+                        const chosen = MockAIService.KNOWLEDGE_GRAPH[chosenId];
+                        const reason = performanceRating === 'excelling'
+                            ? `You're excelling — let's challenge you!`
+                            : `Based on your progress in ${node.name}.`;
+                        return resolve({ name: chosen.name, reason });
+                    }
+                }
+
+                // Fallback
+                resolve({
+                    name: `Advanced ${currentTopic}`,
+                    reason: `Keep exploring deeper concepts.`
+                });
+            }, 400);
+        });
+    }
+
+    /**
+     * Generate a full ordered learning path from the current topic.
+     * @returns {Promise<Array<{id, name, status}>>} status: "completed"|"current"|"upcoming"
+     */
+    async generateLearningPath(currentTopic, completedTopics = []) {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                const path = [];
+                const completedLower = completedTopics.map(t => t.toLowerCase().trim());
+                const node = this.findGraphNode(currentTopic);
+
+                if (!node) {
+                    // Not in graph — return a minimal path
+                    path.push({ id: 'current', name: currentTopic, status: 'current' });
+                    path.push({ id: 'next', name: `Advanced ${currentTopic}`, status: 'upcoming' });
+                    return resolve(path);
+                }
+
+                // Walk backwards to find prerequisites chain
+                const visited = new Set();
+                const collectPrereqs = (n) => {
+                    if (!n || visited.has(n.id)) return;
+                    visited.add(n.id);
+                    n.prerequisites.forEach(pid => {
+                        const pn = MockAIService.KNOWLEDGE_GRAPH[pid];
+                        if (pn) collectPrereqs(pn);
+                    });
+                };
+                collectPrereqs(node);
+
+                // Build ordered path: prerequisites -> current -> next topics
+                const orderedIds = [];
+                const addInOrder = (n) => {
+                    if (!n) return;
+                    n.prerequisites.forEach(pid => {
+                        const pn = MockAIService.KNOWLEDGE_GRAPH[pid];
+                        if (pn && !orderedIds.includes(pid)) {
+                            addInOrder(pn);
+                        }
+                    });
+                    if (!orderedIds.includes(n.id)) orderedIds.push(n.id);
+                };
+                addInOrder(node);
+
+                // Add next topics
+                node.nextTopics.forEach(nid => {
+                    if (!orderedIds.includes(nid) && MockAIService.KNOWLEDGE_GRAPH[nid]) {
+                        orderedIds.push(nid);
+                    }
+                });
+
+                // Build the path with statuses
+                orderedIds.forEach(id => {
+                    const gn = MockAIService.KNOWLEDGE_GRAPH[id];
+                    if (!gn) return;
+                    let status;
+                    if (completedLower.includes(gn.name.toLowerCase())) {
+                        status = 'completed';
+                    } else if (gn.name.toLowerCase() === currentTopic.toLowerCase().trim()) {
+                        status = 'current';
+                    } else {
+                        status = 'upcoming';
+                    }
+                    path.push({ id: gn.id, name: gn.name, status });
+                });
+
+                resolve(path);
+            }, 300);
+        });
+    }
 }
+
+// --- Knowledge Graph (static on the class) ---
+MockAIService.KNOWLEDGE_GRAPH = {
+    "javascript-basics": {
+        id: "javascript-basics", name: "JavaScript Basics",
+        prerequisites: [], nextTopics: ["variables-data-types", "functions"],
+        category: "JavaScript", difficultyTier: "beginner"
+    },
+    "variables-data-types": {
+        id: "variables-data-types", name: "Variables & Data Types",
+        prerequisites: ["javascript-basics"], nextTopics: ["functions", "operators"],
+        category: "JavaScript", difficultyTier: "beginner"
+    },
+    "operators": {
+        id: "operators", name: "Operators",
+        prerequisites: ["variables-data-types"], nextTopics: ["functions"],
+        category: "JavaScript", difficultyTier: "beginner"
+    },
+    "functions": {
+        id: "functions", name: "Functions",
+        prerequisites: ["javascript-basics"], nextTopics: ["closures", "callbacks", "arrow-functions"],
+        category: "JavaScript", difficultyTier: "beginner"
+    },
+    "arrow-functions": {
+        id: "arrow-functions", name: "Arrow Functions",
+        prerequisites: ["functions"], nextTopics: ["closures"],
+        category: "JavaScript", difficultyTier: "intermediate"
+    },
+    "callbacks": {
+        id: "callbacks", name: "Callbacks",
+        prerequisites: ["functions"], nextTopics: ["promises", "async-js"],
+        category: "JavaScript", difficultyTier: "intermediate"
+    },
+    "closures": {
+        id: "closures", name: "Closures",
+        prerequisites: ["functions"], nextTopics: ["async-js", "promises"],
+        category: "JavaScript", difficultyTier: "intermediate"
+    },
+    "async-js": {
+        id: "async-js", name: "Async JS",
+        prerequisites: ["closures", "callbacks"], nextTopics: ["promises", "async-await"],
+        category: "JavaScript", difficultyTier: "intermediate"
+    },
+    "promises": {
+        id: "promises", name: "Promises",
+        prerequisites: ["async-js"], nextTopics: ["async-await", "fetch-api"],
+        category: "JavaScript", difficultyTier: "advanced"
+    },
+    "async-await": {
+        id: "async-await", name: "Async/Await",
+        prerequisites: ["promises"], nextTopics: ["fetch-api"],
+        category: "JavaScript", difficultyTier: "advanced"
+    },
+    "fetch-api": {
+        id: "fetch-api", name: "Fetch API",
+        prerequisites: ["async-await"], nextTopics: [],
+        category: "JavaScript", difficultyTier: "advanced"
+    },
+    "html": {
+        id: "html", name: "HTML",
+        prerequisites: [], nextTopics: ["semantic-html", "css"],
+        category: "Web", difficultyTier: "beginner"
+    },
+    "semantic-html": {
+        id: "semantic-html", name: "Semantic HTML",
+        prerequisites: ["html"], nextTopics: ["css"],
+        category: "Web", difficultyTier: "beginner"
+    },
+    "css": {
+        id: "css", name: "CSS",
+        prerequisites: ["html"], nextTopics: ["flexbox", "css-grid", "responsive-design"],
+        category: "Web", difficultyTier: "beginner"
+    },
+    "flexbox": {
+        id: "flexbox", name: "Flexbox",
+        prerequisites: ["css"], nextTopics: ["css-grid", "animations"],
+        category: "Web", difficultyTier: "intermediate"
+    },
+    "css-grid": {
+        id: "css-grid", name: "CSS Grid",
+        prerequisites: ["css"], nextTopics: ["responsive-design", "animations"],
+        category: "Web", difficultyTier: "intermediate"
+    },
+    "responsive-design": {
+        id: "responsive-design", name: "Responsive Design",
+        prerequisites: ["css"], nextTopics: ["animations"],
+        category: "Web", difficultyTier: "intermediate"
+    },
+    "animations": {
+        id: "animations", name: "CSS Animations",
+        prerequisites: ["flexbox"], nextTopics: [],
+        category: "Web", difficultyTier: "advanced"
+    },
+    "photosynthesis": {
+        id: "photosynthesis", name: "Photosynthesis",
+        prerequisites: [], nextTopics: ["cellular-respiration", "plant-anatomy"],
+        category: "Science", difficultyTier: "beginner"
+    },
+    "cellular-respiration": {
+        id: "cellular-respiration", name: "Cellular Respiration",
+        prerequisites: ["photosynthesis"], nextTopics: [],
+        category: "Science", difficultyTier: "intermediate"
+    },
+    "plant-anatomy": {
+        id: "plant-anatomy", name: "Plant Anatomy",
+        prerequisites: ["photosynthesis"], nextTopics: [],
+        category: "Science", difficultyTier: "intermediate"
+    }
+};
 
 // ==========================================
 // 5. SPEECH RECOGNITION SERVICE
@@ -490,6 +917,15 @@ class AppController {
         
         this.ui.appendMessage('user', frag);
         
+        this.ui.appendSystemMessage("Analyzing your learning level...");
+        
+        // Generate and render learning path immediately
+        this.ai.generateLearningPath(topic, this.state.completedTopics).then(path => {
+            this.state.currentPath = path.map(n => n.name);
+            this.state.save();
+            this.ui.renderLearningPath(path);
+        });
+        
         await this.fetchLesson();
     }
 
@@ -498,6 +934,9 @@ class AppController {
         this.ui.setInputsEnabled(false);
         
         try {
+            await new Promise(r => setTimeout(r, 600)); // Brief pause for UX
+            this.ui.appendSystemMessage("Generating personalized explanation...");
+            
             const lessonData = await this.ai.generateLesson(
                 this.state.topic, 
                 this.state.difficulty, 
@@ -615,6 +1054,8 @@ class AppController {
         frag.appendChild(p);
         this.ui.appendMessage('user', frag);
         
+        this.ui.appendSystemMessage("Evaluating your answer...");
+        
         this.ui.showTypingIndicator();
         this.ui.setInputsEnabled(false);
         
@@ -653,6 +1094,8 @@ class AppController {
         
         const difficultyMsg = this.state.levelUp();
         
+        this.ui.appendSystemMessage("Adjusting difficulty based on performance: <strong>Level Up!</strong>");
+        
         this.ui.elements.difficultySelect.value = this.state.difficulty;
         this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty, "Great job! You're improving!", "positive");
         
@@ -683,18 +1126,44 @@ class AppController {
         const p2 = document.createElement('p');
         p2.textContent = difficultyMsg;
         
-        const p3 = document.createElement('p');
-        p3.textContent = "Want to learn something else, or dive deeper? Enter a new topic or ask a follow up question.";
-        
         frag.appendChild(p2);
-        frag.appendChild(p3);
         
         this.ui.appendMessage('ai', frag);
         this.state.isWaitingForQuizAnswer = false;
+        
+        // Mark topic as completed and update learning path
+        this.state.completeTopic(this.state.topic, true);
+        const perfRating = this.state.getPerformanceRating();
+        
+        // Generate updated learning path + recommendation
+        Promise.all([
+            this.ai.getRecommendation(this.state.topic, this.state.completedTopics, perfRating),
+            this.ai.generateLearningPath(this.state.topic, this.state.completedTopics)
+        ]).then(([rec, path]) => {
+            // Render updated path timeline
+            this.state.currentPath = path.map(n => n.name);
+            this.state.save();
+            this.ui.renderLearningPath(path);
+
+            // Show next topic recommendation
+            if (rec && rec.name) {
+                this.ui.showNextTopicRecommendation(rec.name, rec.reason, perfRating, (topic) => {
+                    this.ui.elements.topicInput.value = topic;
+                    this.startLearning();
+                });
+                this.ui.appendSystemMessage(`Recommended next: <strong>${rec.name}</strong> — ${rec.reason}`);
+            }
+        });
     }
 
     async handleIncorrectAnswer(aiFeedback = "") {
         const { msg, shouldRevise } = this.state.levelDown();
+        
+        if (shouldRevise) {
+            this.ui.appendSystemMessage("Multiple incorrect answers detected. <strong>Simplifying explanation...</strong>");
+        } else {
+            this.ui.appendSystemMessage("Adjusting difficulty based on performance: <strong>Stepping back...</strong>");
+        }
         
         if (this.state.isEli5) {
             this.ui.elements.eli5Toggle.checked = true;
@@ -785,6 +1254,38 @@ function runBasicTests() {
         console.assert(state.difficulty === 'beginner', "Level down failed to revert to beginner");
         console.assert(state.isEli5 === true, "Should force ELI5 on 2+ incorrect answers");
         console.assert(state.incorrectAnswersCount === 2, "Incorrect answer count should be 2");
+
+        // --- Test 3: Learning Path - Topic Completion ---
+        const lpState = new StateManager();
+        lpState.difficulty = 'intermediate';
+        lpState.completeTopic("JavaScript Basics", true);
+        console.assert(lpState.completedTopics.includes("JavaScript Basics"), "Topic should be in completedTopics");
+        console.assert(lpState.topicScores["JavaScript Basics"].correct === 1, "Correct count should be 1");
+        console.assert(lpState.topicScores["JavaScript Basics"].attempts === 1, "Attempts should be 1");
+        
+        // --- Test 4: Performance Rating ---
+        lpState.completeTopic("Functions", true);
+        lpState.completeTopic("Closures", true);
+        console.assert(lpState.getPerformanceRating() === 'excelling', "3/3 correct should be excelling");
+        
+        lpState.completeTopic("Async JS", false);
+        lpState.completeTopic("Promises", false);
+        // Now 3 correct, 5 attempts total = 0.6 accuracy → "steady"
+        console.assert(lpState.getPerformanceRating() === 'steady', "3/5 correct should be steady");
+
+        // --- Test 5: Knowledge Graph Node Lookup ---
+        const ai = new MockAIService();
+        const jsNode = ai.findGraphNode("JavaScript Basics");
+        console.assert(jsNode !== null, "findGraphNode should find 'JavaScript Basics'");
+        console.assert(jsNode.id === "javascript-basics", "Node ID should be 'javascript-basics'");
+        console.assert(jsNode.nextTopics.length > 0, "Should have next topics");
+
+        const closuresNode = ai.findGraphNode("Closures");
+        console.assert(closuresNode !== null, "findGraphNode should find 'Closures'");
+        console.assert(closuresNode.prerequisites.includes("functions"), "Closures should require Functions");
+
+        const missingNode = ai.findGraphNode("Quantum Computing");
+        console.assert(missingNode === null, "Unknown topic should return null");
         
         console.log("%c All basic tests passed! ", "color: #10b981; font-weight: bold;");
     } catch (e) {

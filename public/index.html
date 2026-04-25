@@ -68,6 +68,24 @@
                         <!-- History items injected here -->
                     </ul>
                 </div>
+
+                <div class="learning-path-section" id="learning-path-section" style="display: none;">
+                    <h3><i class="fa-solid fa-route"></i> Your Learning Path</h3>
+                    <div class="path-progress" id="path-progress">
+                        <!-- Dynamic path nodes rendered here -->
+                    </div>
+                    <div class="next-topic-card" id="next-topic-card" style="display: none;">
+                        <div class="next-topic-header">
+                            <span class="next-label">Recommended Next</span>
+                            <span class="performance-badge" id="performance-badge"></span>
+                        </div>
+                        <button class="recommendation-badge" id="next-topic-btn" aria-label="Start recommended topic">
+                            <span id="next-topic-name"></span>
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                        <p class="next-topic-reason" id="next-topic-reason"></p>
+                    </div>
+                </div>
             </aside>
 
             <!-- Chat Interface -->
