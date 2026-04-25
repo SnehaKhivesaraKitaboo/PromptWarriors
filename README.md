@@ -13,29 +13,31 @@ There is a need for a system that:
 * Adapts to individual learning pace
 * Provides contextual explanations
 * Reinforces understanding through interaction
+* Improves retention through feedback-driven learning
 
 ---
 
 ## 💡 Our Solution
 
-**AI Learning Companion** is a smart assistant that:
+**AI Learning Companion** is a smart assistant that delivers:
 
-* Explains topics based on user-selected difficulty
-* Adapts in real-time based on user responses
-* Reinforces learning with quizzes and feedback
-* Tracks progress and improves learning efficiency
+* Personalized explanations based on user-selected difficulty
+* Real-time adaptive learning based on user responses
+* Interactive quizzes to reinforce understanding
+* Continuous feedback and progress tracking
 
-It simulates an **interactive tutor experience**, not just content delivery.
+It simulates an **interactive tutor experience**, making learning dynamic and engaging.
 
 ---
 
 ## 🔥 What Makes This Unique
 
-* Adaptive learning loop based on user performance
+* Adaptive learning loop based on real-time performance
 * “Explain Like I’m 5” (ELI5) mode for simplified understanding
 * Chat + Quiz combined learning experience
 * Lightweight and fast (<1MB)
-* Designed for real AI integration (Google Gemini)
+* Designed for seamless **Google Gemini AI integration**
+* Accessibility-first design
 
 ---
 
@@ -45,59 +47,58 @@ It simulates an **interactive tutor experience**, not just content delivery.
 
 * Topic-based input (e.g., “JavaScript Closures”)
 * Difficulty levels: Beginner / Intermediate / Advanced
-* ELI5 mode
+* ELI5 (Explain Like I’m 5) mode
 
 ### 🔁 Adaptive Intelligence
 
-* Dynamically adjusts difficulty based on answers
-* Simplifies explanations when users struggle
-* Increases complexity when users perform well
+* Tracks incorrect answers and identifies weak areas
+* Dynamically adjusts difficulty level
+* Provides simplified explanations when needed
+* Suggests revision when user struggles
 
 ### 📊 Progress Tracking & Scoring
 
 * Real-time learning score (0–100)
-* Visual progress bar
-* Performance-based feedback
+* Animated progress bar
+* Feedback messages like:
+
+  * “You're improving!”
+  * “Try revising this concept”
 
 ### 💬 Interactive AI Chat Interface
 
-* Chat-style learning experience
+* Chat-style assistant
 * Step-by-step explanations
-* Examples + follow-up quiz questions
+* Examples + quiz-based reinforcement
 
 ### 🎤 Voice Support (Bonus)
 
-* Voice input using Web Speech API
-* Speech output for accessibility
+* Voice input (SpeechRecognition)
+* Speech output (SpeechSynthesis)
 
 ---
 
 ## 🧠 Intelligence Layer
 
-The system goes beyond static responses:
+The system creates a feedback-driven learning loop:
 
-* Tracks incorrect answers
-* Identifies weak areas
-* Suggests simplified explanations
-* Adapts difficulty dynamically
-
-```js
-if (wrongAnswers > 2) {
+```js id="c9a9tb"
+if (wrongAnswers >= 2) {
   provideSimplifiedExplanation();
   suggestRevision();
 }
 ```
 
-This creates a **feedback-driven learning loop**, improving retention and engagement.
+This ensures **personalized and adaptive learning behavior**.
 
 ---
 
 ## 🌍 Real-World Use Cases
 
-* Students learning new concepts quickly
+* Students learning new concepts
 * Developers preparing for interviews
-* Users revising topics efficiently
-* Self-paced learners needing guidance
+* Quick revision and self-paced learning
+* Beginners needing guided explanations
 
 ---
 
@@ -105,56 +106,59 @@ This creates a **feedback-driven learning loop**, improving retention and engage
 
 * **Frontend:** HTML, CSS, JavaScript
 * **Design:** Accessible dark mode UI
-* **Storage:** localStorage
+* **Storage:** localStorage (progress persistence)
+* **Deployment:** Firebase (Cloud Run hosting)
 * **AI Integration:** Structured for Google Gemini API (mocked)
 * **Voice:** Web Speech API
 
 ---
 
-## 🔗 Google Services Integration
+## ☁️ Google Services Integration
 
-This project is designed for **Google Gemini AI integration**:
+* Firebase used for deployment (Cloud Run)
+* Architecture supports integration with **Google Gemini AI**
+* Structured prompt-response system for consistent AI output
+* Easily extendable to Firestore for storing user progress
 
-* Modular API layer for easy integration
-* Structured prompts for consistent AI responses
-* Mock API simulates real-world behavior
-* Plug-and-play support for real API keys
-
-> Note: API keys are not exposed for security reasons.
+> Note: API keys are not exposed for security reasons. Mock API simulates real-world AI responses.
 
 ---
 
 ## 🔐 Security
 
-* Input sanitization to prevent XSS
-* Safe DOM manipulation (no unsafe innerHTML)
-* No sensitive data exposure
+* Input validation and sanitization
+* Safe DOM rendering using textContent (prevents XSS)
+* No sensitive data exposure in frontend
+* Error handling for invalid inputs
 
 ---
 
 ## ⚡ Efficiency
 
 * Lightweight project (<1MB)
-* No heavy dependencies
-* Optimized rendering and DOM updates
+* Optimized DOM updates
+* Cached DOM references to reduce reflows
+* Minimal dependencies
+
+---
+
+## 🧪 Testing & Validation
+
+* Basic test layer implemented using console.assert
+* Input validation tests
+* Adaptive logic validation
+* Edge case handling
+* Manual testing across user flows
 
 ---
 
 ## ♿ Accessibility
 
 * High-contrast dark mode
-* Keyboard navigation support
-* Proper labels and focus states
-* Readable typography
-
----
-
-## 🧪 Testing & Validation
-
-* Input validation (empty/invalid topics)
-* Edge case handling
-* Manual testing across flows
-* localStorage persistence testing
+* ARIA labels for inputs and buttons
+* Keyboard navigation support (Enter key actions)
+* Visible focus indicators
+* Readable typography and spacing
 
 ---
 
@@ -166,9 +170,10 @@ This project is designed for **Google Gemini AI integration**:
    * Explanation
    * Step-by-step breakdown
    * Examples
-3. User answers a quiz question
+3. User answers quiz question
 4. System:
 
+   * Evaluates response
    * Adjusts difficulty
    * Updates score
    * Provides feedback
@@ -178,15 +183,15 @@ This project is designed for **Google Gemini AI integration**:
 
 ## 📸 Demo
 
-*(Add screenshots or GIF here for better impact)*
+*(Add screenshots or GIF here for better evaluation impact)*
 
 ---
 
 ## 🚀 Future Enhancements
 
-* Full Gemini API integration
+* Full Google Gemini API integration
+* Firestore-based user progress tracking
 * Learning history dashboard
-* Topic-based learning paths
 * Gamification (badges, streaks)
 * Multi-language support
 
@@ -194,9 +199,9 @@ This project is designed for **Google Gemini AI integration**:
 
 ## 📌 Assumptions
 
-* Users have access to a modern browser
+* Users access via modern browsers
 * AI responses are simulated but structured realistically
-* Learning improves through interaction
+* Learning improves with interactive feedback
 
 ---
 
@@ -210,4 +215,10 @@ By combining:
 * Personalized explanations
 * Real-time adaptation
 
-…it creates a system that **learns how you learn**.
+…it creates a system that **learns how you learn**, improving both engagement and retention.
+
+---
+
+## 🙌 Built For
+
+**PromptWars Hackathon – Build, Pitch & Win 🚀**
