@@ -1,181 +1,245 @@
 /**
  * AI Learning Companion - Main Logic
+ * Refactored for modularity, security, and maximum performance.
  */
 
-// --- State Management ---
-const state = {
-    score: 0,
-    maxScore: 100,
-    difficulty: 'beginner',
-    topic: '',
-    isEli5: false,
-    history: [],
-    currentQuizAnswer: null,
-    isWaitingForQuizAnswer: false
-};
-
-// Load state from local storage
-function loadState() {
-    const saved = localStorage.getItem('learnAiState');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        state.score = parsed.score || 0;
-        state.history = parsed.history || [];
-        updateScoreUI();
-        renderHistory();
+// ==========================================
+// 1. UTILS & VALIDATION
+// ==========================================
+class Utils {
+    static validateInput(value, minLength = 2, fieldName = "Input") {
+        if (value === null || value === undefined) {
+            alert(`${fieldName} cannot be null or empty.`);
+            return false;
+        }
+        const trimmed = String(value).trim();
+        if (trimmed.length === 0) {
+            alert(`Please enter a valid ${fieldName}.`);
+            return false;
+        }
+        if (trimmed.length < minLength) {
+            alert(`${fieldName} must be at least ${minLength} characters long.`);
+            return false;
+        }
+        return true;
     }
 }
 
-function saveState() {
-    localStorage.setItem('learnAiState', JSON.stringify({
-        score: state.score,
-        history: state.history
-    }));
+// ==========================================
+// 2. STATE MANAGEMENT
+// ==========================================
+class StateManager {
+    constructor() {
+        this.score = 0;
+        this.maxScore = 100;
+        this.difficulty = 'beginner';
+        this.topic = '';
+        this.isEli5 = false;
+        this.history = [];
+        this.currentQuizAnswer = null;
+        this.isWaitingForQuizAnswer = false;
+    }
+
+    load() {
+        try {
+            const saved = localStorage.getItem('learnAiState');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                this.score = parsed.score || 0;
+                this.history = parsed.history || [];
+            }
+        } catch (e) {
+            console.error("Failed to load state", e);
+        }
+    }
+
+    save() {
+        try {
+            localStorage.setItem('learnAiState', JSON.stringify({
+                score: this.score,
+                history: this.history
+            }));
+        } catch (e) {
+            console.error("Failed to save state", e);
+        }
+    }
+
+    addToHistory(topic) {
+        if (!this.history.includes(topic)) {
+            this.history.push(topic);
+            this.save();
+            return true; // Indicates history changed
+        }
+        return false;
+    }
+
+    levelUp() {
+        if (this.difficulty === 'beginner') {
+            this.difficulty = 'intermediate';
+            return "You got it! Let's level up to Intermediate.";
+        } else if (this.difficulty === 'intermediate') {
+            this.difficulty = 'advanced';
+            return "Excellent! You're ready for Advanced concepts.";
+        } else {
+            return "Perfect! You've mastered this topic!";
+        }
+    }
+
+    levelDown() {
+        if (this.difficulty === 'advanced') {
+            this.difficulty = 'intermediate';
+            return "Not quite. Let's step back to Intermediate and break it down more.";
+        } else if (this.difficulty === 'intermediate') {
+            this.difficulty = 'beginner';
+            return "That's incorrect. Let's go back to Beginner basics.";
+        } else {
+            this.isEli5 = true;
+            return "Nope! Let me explain it like you're 5 to make it super clear.";
+        }
+    }
 }
 
-// --- DOM Elements ---
-const DOM = {
-    scoreDisplay: document.getElementById('user-score'),
-    levelDisplay: document.getElementById('user-level'),
-    progressBar: document.getElementById('progress-bar'),
-    topicInput: document.getElementById('topic-input'),
-    difficultySelect: document.getElementById('difficulty-select'),
-    eli5Toggle: document.getElementById('eli5-toggle'),
-    startBtn: document.getElementById('start-learning-btn'),
-    chatMessages: document.getElementById('chat-messages'),
-    chatInput: document.getElementById('chat-input'),
-    sendBtn: document.getElementById('send-btn'),
-    micBtn: document.getElementById('mic-btn'),
-    voiceStatus: document.getElementById('voice-status'),
-    historyList: document.getElementById('history-list')
-};
-
-// --- Initialization ---
-function init() {
-    loadState();
-    
-    DOM.startBtn.addEventListener('click', startLearning);
-    DOM.sendBtn.addEventListener('click', handleUserResponse);
-    DOM.chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleUserResponse();
-    });
-    
-    setupVoiceRecognition();
-}
-
-// --- UI Updates ---
-function updateScoreUI() {
-    DOM.scoreDisplay.textContent = state.score;
-    const progress = Math.min((state.score / state.maxScore) * 100, 100);
-    DOM.progressBar.style.width = `${progress}%`;
-    
-    // Update badge visually
-    DOM.levelDisplay.className = `level-badge ${state.difficulty}`;
-    DOM.levelDisplay.textContent = state.difficulty.charAt(0).toUpperCase() + state.difficulty.slice(1);
-}
-
-function renderHistory() {
-    DOM.historyList.innerHTML = '';
-    // Show last 5
-    const recent = state.history.slice(-5).reverse();
-    recent.forEach(item => {
-        const li = document.createElement('li');
-        li.className = 'history-item';
-        li.textContent = item;
-        li.onclick = () => {
-            DOM.topicInput.value = item;
-            startLearning();
+// ==========================================
+// 3. UI MANAGEMENT
+// ==========================================
+class UIManager {
+    constructor() {
+        // Cache all DOM elements once
+        this.elements = {
+            scoreDisplay: document.getElementById('user-score'),
+            levelDisplay: document.getElementById('user-level'),
+            progressBar: document.getElementById('progress-bar'),
+            topicInput: document.getElementById('topic-input'),
+            difficultySelect: document.getElementById('difficulty-select'),
+            eli5Toggle: document.getElementById('eli5-toggle'),
+            startBtn: document.getElementById('start-learning-btn'),
+            chatMessages: document.getElementById('chat-messages'),
+            chatInput: document.getElementById('chat-input'),
+            sendBtn: document.getElementById('send-btn'),
+            micBtn: document.getElementById('mic-btn'),
+            voiceStatus: document.getElementById('voice-status'),
+            historyList: document.getElementById('history-list')
         };
-        DOM.historyList.appendChild(li);
-    });
-}
+        
+        // Cache active typing indicator element to avoid querying the DOM
+        this.activeTypingIndicator = null;
+    }
 
-function scrollToBottom() {
-    DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
-}
+    updateScoreDisplay(score, maxScore, difficulty) {
+        // Use requestAnimationFrame for smooth UI updates
+        requestAnimationFrame(() => {
+            this.elements.scoreDisplay.textContent = score;
+            const progress = Math.min((score / maxScore) * 100, 100);
+            this.elements.progressBar.style.width = `${progress}%`;
+            
+            this.elements.levelDisplay.className = `level-badge ${difficulty}`;
+            this.elements.levelDisplay.textContent = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+        });
+    }
 
-// Securely create HTML elements to prevent XSS
-function escapeHTML(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
+    renderHistory(history) {
+        // Use DocumentFragment to batch DOM insertions
+        const frag = document.createDocumentFragment();
+        const recent = history.slice(-5).reverse();
+        
+        recent.forEach(item => {
+            const li = document.createElement('li');
+            li.className = 'history-item';
+            li.textContent = item;
+            li.setAttribute('tabindex', '0');
+            li.setAttribute('role', 'button');
+            li.setAttribute('aria-label', `Revisit topic: ${item}`);
+            // We use Event Delegation in AppController instead of attaching inline listeners
+            frag.appendChild(li);
+        });
+        
+        requestAnimationFrame(() => {
+            this.elements.historyList.innerHTML = '';
+            this.elements.historyList.appendChild(frag);
+        });
+    }
 
-function appendMessage(sender, contentHTML) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${sender}-message`;
-    
-    const avatarIcon = sender === 'ai' ? 'fa-robot' : 'fa-user';
-    
-    msgDiv.innerHTML = `
-        <div class="avatar"><i class="fa-solid ${avatarIcon}"></i></div>
-        <div class="message-content">${contentHTML}</div>
-    `;
-    
-    DOM.chatMessages.appendChild(msgDiv);
-    scrollToBottom();
-}
+    /**
+     * @param {string} sender 'ai' or 'user'
+     * @param {HTMLElement | DocumentFragment | string} contentElement 
+     * @param {boolean} isTyping 
+     */
+    _appendMessageWrapper(sender, contentElement, isTyping = false) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${sender}-message${isTyping ? ' typing-msg' : ''}`;
+        
+        const avatarIcon = sender === 'ai' ? 'fa-robot' : 'fa-user';
+        msgDiv.innerHTML = `<div class="avatar"><i class="fa-solid ${avatarIcon}"></i></div>`;
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        if (contentElement instanceof HTMLElement || contentElement instanceof DocumentFragment) {
+            contentDiv.appendChild(contentElement);
+        } else {
+            // Only for trusted internal strings (typing dots)
+            contentDiv.innerHTML = contentElement;
+        }
+        
+        msgDiv.appendChild(contentDiv);
+        
+        requestAnimationFrame(() => {
+            this.elements.chatMessages.appendChild(msgDiv);
+            this.scrollToBottom();
+        });
+        
+        return msgDiv;
+    }
 
-function showTypingIndicator() {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ai-message typing-msg`;
-    msgDiv.id = 'typing-indicator';
-    
-    msgDiv.innerHTML = `
-        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
-        <div class="message-content">
+    appendMessage(sender, contentElement) {
+        this._appendMessageWrapper(sender, contentElement);
+    }
+
+    showTypingIndicator() {
+        if (this.activeTypingIndicator) return;
+        const typingHTML = `
             <div class="typing-indicator">
                 <div class="dot"></div>
                 <div class="dot"></div>
                 <div class="dot"></div>
             </div>
-        </div>
-    `;
-    DOM.chatMessages.appendChild(msgDiv);
-    scrollToBottom();
-}
+        `;
+        this.activeTypingIndicator = this._appendMessageWrapper('ai', typingHTML, true);
+    }
 
-function hideTypingIndicator() {
-    const indicator = document.getElementById('typing-indicator');
-    if (indicator) indicator.remove();
-}
+    hideTypingIndicator() {
+        if (this.activeTypingIndicator) {
+            this.activeTypingIndicator.remove();
+            this.activeTypingIndicator = null;
+        }
+    }
 
-// --- Logic Flow ---
-async function startLearning() {
-    const topic = DOM.topicInput.value.trim();
-    if (!topic) {
-        alert("Please enter a topic to learn.");
-        return;
+    scrollToBottom() {
+        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+    }
+
+    setInputsEnabled(enabled) {
+        this.elements.chatInput.disabled = !enabled;
+        this.elements.sendBtn.disabled = !enabled;
+        this.elements.startBtn.disabled = !enabled;
+        this.elements.micBtn.disabled = !enabled;
     }
     
-    state.topic = topic;
-    state.difficulty = DOM.difficultySelect.value;
-    state.isEli5 = DOM.eli5Toggle.checked;
-    
-    // Add to history
-    if (!state.history.includes(topic)) {
-        state.history.push(topic);
-        saveState();
-        renderHistory();
+    clearChat() {
+        this.elements.chatMessages.innerHTML = '';
     }
-    
-    updateScoreUI();
-    
-    // Clear chat and start
-    DOM.chatMessages.innerHTML = '';
-    appendMessage('user', `<p>I want to learn about <strong>${escapeHTML(topic)}</strong> (${state.difficulty}${state.isEli5 ? ', ELI5' : ''}).</p>`);
-    
-    await fetchLesson();
 }
 
-// --- Mock AI API ---
-// This acts as a placeholder for Google AI API
-const MockAIApi = {
-    generateLesson: async (topic, difficulty, eli5) => {
-        return new Promise(resolve => {
+// ==========================================
+// 4. AI SERVICE (MOCK API)
+// ==========================================
+class MockAIService {
+    async generateLesson(topic, difficulty, eli5) {
+        return new Promise((resolve, reject) => {
             setTimeout(() => {
+                if (!topic) return reject(new Error("Topic is required"));
+
                 let explanation, steps, example, quiz;
-                
                 const simplify = eli5 || difficulty === 'beginner';
                 
                 if (topic.toLowerCase().includes('photosynthesis')) {
@@ -195,7 +259,6 @@ const MockAIApi = {
                         answerKeyword: "sunlight"
                     };
                 } else {
-                    // Generic fallback response
                     explanation = simplify
                         ? `Let's keep it simple: ${topic} is a really cool concept that helps us solve specific problems easily.`
                         : `${topic} is an important concept in its field, characterized by specific principles that govern its behavior.`;
@@ -214,181 +277,423 @@ const MockAIApi = {
                 }
                 
                 resolve({ explanation, steps, example, quiz });
-            }, 1500); // simulate network delay
+            }, 1500); 
         });
-    },
-    
-    evaluateAnswer: async (userAnswer, actualAnswer, keyword) => {
-        return new Promise(resolve => {
+    }
+
+    async evaluateAnswer(userAnswer, actualAnswer, keyword) {
+        return new Promise((resolve, reject) => {
             setTimeout(() => {
+                if (!userAnswer || !actualAnswer || !keyword) {
+                    return reject(new Error("Missing arguments for evaluation"));
+                }
                 const isCorrect = userAnswer.toLowerCase().includes(actualAnswer.toLowerCase()) || 
                                   userAnswer.toLowerCase().includes(keyword.toLowerCase());
                 resolve({ isCorrect });
             }, 800);
         });
     }
-};
-
-async function fetchLesson() {
-    showTypingIndicator();
-    setInputsEnabled(false);
-    
-    try {
-        // REPLACE THIS with real Google AI Gemini API fetch call later
-        const lessonData = await MockAIApi.generateLesson(state.topic, state.difficulty, state.isEli5);
-        
-        hideTypingIndicator();
-        
-        let html = `
-            <p>${escapeHTML(lessonData.explanation)}</p>
-            <h4>Step-by-Step</h4>
-            <ul>
-                ${lessonData.steps.map(step => `<li>${escapeHTML(step)}</li>`).join('')}
-            </ul>
-            <h4>Example</h4>
-            <p><em>${escapeHTML(lessonData.example)}</em></p>
-            
-            <div class="quiz-block">
-                <h4>Pop Quiz!</h4>
-                <p>${escapeHTML(lessonData.quiz.question)}</p>
-                <ul>
-                    ${lessonData.quiz.options.map(opt => `<li>${escapeHTML(opt)}</li>`).join('')}
-                </ul>
-                <p><small>Type your answer below...</small></p>
-            </div>
-        `;
-        
-        state.currentQuizAnswer = lessonData.quiz;
-        state.isWaitingForQuizAnswer = true;
-        
-        appendMessage('ai', html);
-        setInputsEnabled(true);
-        DOM.chatInput.focus();
-        
-    } catch (error) {
-        hideTypingIndicator();
-        appendMessage('ai', `<p style="color: var(--danger-color)">Sorry, I encountered an error generating the lesson.</p>`);
-        setInputsEnabled(true);
-    }
 }
 
-async function handleUserResponse() {
-    if (!state.isWaitingForQuizAnswer) return;
-    
-    const text = DOM.chatInput.value.trim();
-    if (!text) return;
-    
-    DOM.chatInput.value = '';
-    appendMessage('user', `<p>${escapeHTML(text)}</p>`);
-    
-    showTypingIndicator();
-    setInputsEnabled(false);
-    
-    // Evaluate answer
-    const evalResult = await MockAIApi.evaluateAnswer(text, state.currentQuizAnswer.answer, state.currentQuizAnswer.answerKeyword);
-    
-    hideTypingIndicator();
-    
-    if (evalResult.isCorrect) {
-        // Adaptive Logic: Success
-        state.score += 10;
-        saveState();
-        
-        let difficultyMsg = "";
-        if (state.difficulty === 'beginner') {
-            state.difficulty = 'intermediate';
-            difficultyMsg = "You got it! Let's level up to Intermediate.";
-        } else if (state.difficulty === 'intermediate') {
-            state.difficulty = 'advanced';
-            difficultyMsg = "Excellent! You're ready for Advanced concepts.";
+// ==========================================
+// 5. SPEECH RECOGNITION SERVICE
+// ==========================================
+class SpeechRecognitionService {
+    constructor(uiManager, onResultCallback) {
+        this.ui = uiManager;
+        this.onResultCallback = onResultCallback;
+        this.recognition = null;
+        this.isSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+        if (this.isSupported) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            this.recognition = new SpeechRecognition();
+            this.recognition.continuous = false;
+            this.recognition.interimResults = false;
+            this.setupEvents();
         } else {
-            difficultyMsg = "Perfect! You've mastered this topic!";
+            this.ui.elements.micBtn.style.display = 'none';
         }
-        
-        DOM.difficultySelect.value = state.difficulty;
-        updateScoreUI();
-        
-        appendMessage('ai', `<p style="color: var(--success-color)"><strong>Correct!</strong></p><p>${difficultyMsg}</p><p>Want to learn something else, or dive deeper? Enter a new topic or ask a follow up question.</p>`);
-        state.isWaitingForQuizAnswer = false; // end loop, wait for new topic
-    } else {
-        // Adaptive Logic: Fail
-        let simplifyMsg = "";
-        if (state.difficulty === 'advanced') {
-            state.difficulty = 'intermediate';
-            simplifyMsg = "Not quite. Let's step back to Intermediate and break it down more.";
-        } else if (state.difficulty === 'intermediate') {
-            state.difficulty = 'beginner';
-            simplifyMsg = "That's incorrect. Let's go back to Beginner basics.";
-        } else {
-            state.isEli5 = true;
-            DOM.eli5Toggle.checked = true;
-            simplifyMsg = "Nope! Let me explain it like you're 5 to make it super clear.";
-        }
-        
-        DOM.difficultySelect.value = state.difficulty;
-        updateScoreUI();
-        
-        appendMessage('ai', `<p style="color: var(--warning-color)"><strong>Not quite right.</strong></p><p>${simplifyMsg}</p>`);
-        
-        // Fetch simplified lesson
-        await fetchLesson();
     }
-    
-    setInputsEnabled(true);
-}
 
-function setInputsEnabled(enabled) {
-    DOM.chatInput.disabled = !enabled;
-    DOM.sendBtn.disabled = !enabled;
-    DOM.startBtn.disabled = !enabled;
-    DOM.micBtn.disabled = !enabled;
-}
-
-// --- Voice Recognition (Bonus) ---
-let recognition;
-
-function setupVoiceRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-        recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        
-        recognition.onstart = function() {
-            DOM.micBtn.classList.add('recording');
-            DOM.voiceStatus.classList.remove('hidden');
+    setupEvents() {
+        this.recognition.onstart = () => {
+            this.ui.elements.micBtn.classList.add('recording');
+            this.ui.elements.voiceStatus.classList.remove('hidden');
         };
         
-        recognition.onresult = function(event) {
+        this.recognition.onresult = (event) => {
             const transcript = event.results[0][0].transcript;
-            DOM.chatInput.value = transcript;
-            // Optionally auto-send
-            // handleUserResponse();
+            this.onResultCallback(transcript);
         };
         
-        recognition.onerror = function(event) {
+        this.recognition.onerror = (event) => {
             console.error("Speech recognition error", event.error);
-            DOM.voiceStatus.textContent = "Error: " + event.error;
-            setTimeout(() => DOM.voiceStatus.classList.add('hidden'), 2000);
+            this.ui.elements.voiceStatus.textContent = "Error: " + event.error;
+            setTimeout(() => this.ui.elements.voiceStatus.classList.add('hidden'), 2000);
         };
         
-        recognition.onend = function() {
-            DOM.micBtn.classList.remove('recording');
-            DOM.voiceStatus.classList.add('hidden');
-            DOM.voiceStatus.textContent = "Listening..."; // reset
+        this.recognition.onend = () => {
+            this.ui.elements.micBtn.classList.remove('recording');
+            this.ui.elements.voiceStatus.classList.add('hidden');
+            this.ui.elements.voiceStatus.textContent = "Listening..."; 
         };
+    }
+
+    toggle() {
+        if (!this.isSupported) return;
+        if (this.ui.elements.micBtn.classList.contains('recording')) {
+            this.recognition.stop();
+        } else {
+            this.recognition.start();
+        }
+    }
+}
+
+// ==========================================
+// 6. APPLICATION CONTROLLER
+// ==========================================
+class AppController {
+    constructor() {
+        this.state = new StateManager();
+        this.ui = new UIManager();
+        this.ai = new MockAIService();
+        this.speech = new SpeechRecognitionService(this.ui, (transcript) => {
+            this.ui.elements.chatInput.value = transcript;
+        });
+
+        this.init();
+    }
+
+    init() {
+        this.state.load();
         
-        DOM.micBtn.addEventListener('click', () => {
-            if (DOM.micBtn.classList.contains('recording')) {
-                recognition.stop();
-            } else {
-                recognition.start();
+        // Initial UI state setup
+        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty);
+        this.ui.renderHistory(this.state.history);
+
+        // Bind Events globally and use delegation where possible
+        this.ui.elements.startBtn.addEventListener('click', () => this.startLearning());
+        this.ui.elements.topicInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.startLearning();
+        });
+        this.ui.elements.sendBtn.addEventListener('click', () => this.handleUserResponse());
+        this.ui.elements.chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.handleUserResponse();
+        });
+        this.ui.elements.micBtn.addEventListener('click', () => this.speech.toggle());
+        
+        // Event delegation for history items
+        this.ui.elements.historyList.addEventListener('click', (e) => {
+            if (e.target && e.target.nodeName === 'LI' && e.target.classList.contains('history-item')) {
+                this.ui.elements.topicInput.value = e.target.textContent;
+                this.startLearning();
             }
         });
-    } else {
-        DOM.micBtn.style.display = 'none'; // hide if not supported
+        this.ui.elements.historyList.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.target && e.target.nodeName === 'LI' && e.target.classList.contains('history-item')) {
+                this.ui.elements.topicInput.value = e.target.textContent;
+                this.startLearning();
+            }
+        });
+    }
+
+    async startLearning() {
+        const topicRaw = this.ui.elements.topicInput.value;
+        if (!Utils.validateInput(topicRaw, 2, "topic")) return;
+        
+        const topic = topicRaw.trim();
+        
+        this.state.topic = topic;
+        this.state.difficulty = this.ui.elements.difficultySelect.value;
+        this.state.isEli5 = this.ui.elements.eli5Toggle.checked;
+        
+        // Only re-render history if a new topic was actually added
+        if (this.state.addToHistory(topic)) {
+            this.ui.renderHistory(this.state.history);
+        }
+        
+        this.ui.clearChat();
+        
+        // Securely build initial message using DocumentFragment
+        const frag = document.createDocumentFragment();
+        const p = document.createElement('p');
+        p.textContent = "I want to learn about ";
+        
+        const strong = document.createElement('strong');
+        strong.textContent = topic; // Safe text rendering
+        
+        p.appendChild(strong);
+        const mode = this.state.isEli5 ? ', ELI5' : '';
+        p.appendChild(document.createTextNode(` (${this.state.difficulty}${mode}).`));
+        frag.appendChild(p);
+        
+        this.ui.appendMessage('user', frag);
+        
+        await this.fetchLesson();
+    }
+
+    async fetchLesson() {
+        this.ui.showTypingIndicator();
+        this.ui.setInputsEnabled(false);
+        
+        try {
+            const lessonData = await this.ai.generateLesson(
+                this.state.topic, 
+                this.state.difficulty, 
+                this.state.isEli5
+            );
+            
+            // Validate payload structure
+            if (!lessonData || typeof lessonData !== 'object') {
+                throw new Error("Invalid response received from AI Service.");
+            }
+
+            this.ui.hideTypingIndicator();
+            
+            // Programmatically build HTML to prevent XSS
+            const frag = document.createDocumentFragment();
+            
+            const pExp = document.createElement('p');
+            pExp.textContent = lessonData.explanation || "No explanation provided.";
+            frag.appendChild(pExp);
+            
+            if (lessonData.steps && Array.isArray(lessonData.steps)) {
+                const stepH4 = document.createElement('h4');
+                stepH4.textContent = "Step-by-Step";
+                frag.appendChild(stepH4);
+
+                const ul = document.createElement('ul');
+                lessonData.steps.forEach(step => {
+                    const li = document.createElement('li');
+                    li.textContent = step;
+                    ul.appendChild(li);
+                });
+                frag.appendChild(ul);
+            }
+
+            if (lessonData.example) {
+                const exH4 = document.createElement('h4');
+                exH4.textContent = "Example";
+                frag.appendChild(exH4);
+
+                const exP = document.createElement('p');
+                const em = document.createElement('em');
+                em.textContent = lessonData.example;
+                exP.appendChild(em);
+                frag.appendChild(exP);
+            }
+            
+            if (lessonData.quiz && lessonData.quiz.question) {
+                const qDiv = document.createElement('div');
+                qDiv.className = 'quiz-block';
+
+                const qH4 = document.createElement('h4');
+                qH4.textContent = "Pop Quiz!";
+                qDiv.appendChild(qH4);
+
+                const qP = document.createElement('p');
+                qP.textContent = lessonData.quiz.question;
+                qDiv.appendChild(qP);
+
+                if (Array.isArray(lessonData.quiz.options)) {
+                    const qUl = document.createElement('ul');
+                    lessonData.quiz.options.forEach(opt => {
+                        const li = document.createElement('li');
+                        li.textContent = opt;
+                        qUl.appendChild(li);
+                    });
+                    qDiv.appendChild(qUl);
+                }
+
+                const hintP = document.createElement('p');
+                const small = document.createElement('small');
+                small.textContent = "Type your answer below...";
+                hintP.appendChild(small);
+                qDiv.appendChild(hintP);
+
+                frag.appendChild(qDiv);
+                
+                this.state.currentQuizAnswer = lessonData.quiz;
+                this.state.isWaitingForQuizAnswer = true;
+            } else {
+                this.state.isWaitingForQuizAnswer = false;
+            }
+            
+            this.ui.appendMessage('ai', frag);
+            this.ui.setInputsEnabled(true);
+            this.ui.elements.chatInput.focus();
+            
+        } catch (error) {
+            console.error("AI Error:", error);
+            this.ui.hideTypingIndicator();
+            
+            const frag = document.createDocumentFragment();
+            const pErr = document.createElement('p');
+            pErr.style.color = "var(--danger-color)";
+            pErr.textContent = "Sorry, I encountered an error generating the lesson. Please try again.";
+            frag.appendChild(pErr);
+            
+            this.ui.appendMessage('ai', frag);
+            this.ui.setInputsEnabled(true);
+        }
+    }
+
+    async handleUserResponse() {
+        if (!this.state.isWaitingForQuizAnswer) return;
+        
+        const rawText = this.ui.elements.chatInput.value;
+        if (!Utils.validateInput(rawText, 1, "Answer")) return;
+        
+        const text = rawText.trim();
+        this.ui.elements.chatInput.value = '';
+        
+        // Securely render user input
+        const frag = document.createDocumentFragment();
+        const p = document.createElement('p');
+        p.textContent = text;
+        frag.appendChild(p);
+        this.ui.appendMessage('user', frag);
+        
+        this.ui.showTypingIndicator();
+        this.ui.setInputsEnabled(false);
+        
+        try {
+            const evalResult = await this.ai.evaluateAnswer(
+                text, 
+                this.state.currentQuizAnswer.answer, 
+                this.state.currentQuizAnswer.answerKeyword
+            );
+            
+            this.ui.hideTypingIndicator();
+            
+            if (evalResult && evalResult.isCorrect) {
+                this.handleCorrectAnswer();
+            } else {
+                await this.handleIncorrectAnswer();
+            }
+        } catch(error) {
+            console.error("Evaluation Error:", error);
+            this.ui.hideTypingIndicator();
+            const errFrag = document.createDocumentFragment();
+            const errP = document.createElement('p');
+            errP.style.color = "var(--danger-color)";
+            errP.textContent = "An error occurred evaluating your answer.";
+            errFrag.appendChild(errP);
+            this.ui.appendMessage('ai', errFrag);
+        }
+        
+        this.ui.setInputsEnabled(true);
+    }
+
+    handleCorrectAnswer() {
+        this.state.score += 10;
+        this.state.save();
+        
+        const difficultyMsg = this.state.levelUp();
+        
+        this.ui.elements.difficultySelect.value = this.state.difficulty;
+        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty);
+        
+        const frag = document.createDocumentFragment();
+        const p1 = document.createElement('p');
+        p1.style.color = "var(--success-color)";
+        const strong = document.createElement('strong');
+        strong.textContent = "Correct!";
+        p1.appendChild(strong);
+        
+        const p2 = document.createElement('p');
+        p2.textContent = difficultyMsg;
+        
+        const p3 = document.createElement('p');
+        p3.textContent = "Want to learn something else, or dive deeper? Enter a new topic or ask a follow up question.";
+        
+        frag.appendChild(p1);
+        frag.appendChild(p2);
+        frag.appendChild(p3);
+        
+        this.ui.appendMessage('ai', frag);
+        this.state.isWaitingForQuizAnswer = false;
+    }
+
+    async handleIncorrectAnswer() {
+        const simplifyMsg = this.state.levelDown();
+        
+        if (this.state.isEli5) {
+            this.ui.elements.eli5Toggle.checked = true;
+        }
+        
+        this.ui.elements.difficultySelect.value = this.state.difficulty;
+        this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty);
+        
+        const frag = document.createDocumentFragment();
+        const p1 = document.createElement('p');
+        p1.style.color = "var(--warning-color)";
+        const strong = document.createElement('strong');
+        strong.textContent = "Not quite right.";
+        p1.appendChild(strong);
+        
+        const p2 = document.createElement('p');
+        p2.textContent = simplifyMsg;
+        
+        frag.appendChild(p1);
+        frag.appendChild(p2);
+        
+        this.ui.appendMessage('ai', frag);
+        
+        await this.fetchLesson();
     }
 }
 
-// Run init
-init();
+// ==========================================
+// 7. TESTING SUITE
+// ==========================================
+function runBasicTests() {
+    console.log("%c Running Basic Tests... ", "background: #10b981; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold;");
+    
+    // Mock window.alert to prevent popups during tests
+    const originalAlert = window.alert;
+    let lastAlert = "";
+    window.alert = (msg) => { lastAlert = msg; };
+
+    try {
+        // --- Test 1: Input Validation ---
+        console.assert(Utils.validateInput("Photosynthesis", 2, "topic") === true, "Valid input should return true");
+        
+        console.assert(Utils.validateInput("", 2, "topic") === false, "Empty input should return false");
+        console.assert(lastAlert.includes("valid topic"), "Expected alert for empty input");
+        
+        console.assert(Utils.validateInput("A", 2, "topic") === false, "Short input should return false");
+        console.assert(lastAlert.includes("at least 2 characters"), "Expected alert for short input");
+
+        // --- Test 2: Adaptive Logic (State Management) ---
+        const state = new StateManager();
+        state.difficulty = 'beginner';
+        
+        const msgUp1 = state.levelUp();
+        console.assert(state.difficulty === 'intermediate', "Level up failed to progress to intermediate");
+        console.assert(msgUp1.includes("level up to Intermediate"), "Level up message mismatch");
+        
+        state.levelUp();
+        console.assert(state.difficulty === 'advanced', "Level up failed to progress to advanced");
+        
+        state.levelDown();
+        console.assert(state.difficulty === 'intermediate', "Level down failed to revert to intermediate");
+        
+        state.levelDown();
+        console.assert(state.difficulty === 'beginner', "Level down failed to revert to beginner");
+        
+        console.log("%c All basic tests passed! ", "color: #10b981; font-weight: bold;");
+    } catch (e) {
+        console.error("Tests failed:", e);
+    } finally {
+        // Restore original alert function
+        window.alert = originalAlert;
+    }
+}
+
+// Bootstrap the Application
+document.addEventListener('DOMContentLoaded', () => {
+    runBasicTests();
+    new AppController();
+});
