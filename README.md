@@ -105,7 +105,8 @@ Provides feedback
 Loop continues for continuous learning
 📸 Demo Preview
 
-(Add screenshots here for better impact)
+<img width="1903" height="906" alt="image" src="https://github.com/user-attachments/assets/d2288e6b-99a8-4f25-9132-724bf43e41f0" />
+
 
 🚀 Future Enhancements
 Full Gemini API integration
