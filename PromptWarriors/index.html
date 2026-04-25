@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Learning Companion</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Use FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <i class="fa-solid fa-brain"></i>
+                <h1>Learn.AI</h1>
+            </div>
+            <div class="score-container">
+                <div class="score-info">
+                    <span>Score: <span id="user-score">0</span></span>
+                    <span>Level: <span id="user-level" class="level-badge beginner">Beginner</span></span>
+                </div>
+                <div class="progress-bar-bg" aria-label="Learning Progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar-fill" id="progress-bar"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="main-content">
+            <!-- Sidebar / Settings -->
+            <aside class="sidebar">
+                <h2>New Topic</h2>
+                <div class="input-group">
+                    <label for="topic-input">What do you want to learn?</label>
+                    <input type="text" id="topic-input" placeholder="e.g., Photosynthesis, Closures..." aria-label="Topic to learn">
+                </div>
+                
+                <div class="input-group">
+                    <label for="difficulty-select">Initial Difficulty</label>
+                    <select id="difficulty-select" aria-label="Select difficulty level">
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                    </select>
+                </div>
+
+                <div class="toggle-group">
+                    <label class="switch" aria-label="Toggle Explain Like I'm 5">
+                        <input type="checkbox" id="eli5-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span>Explain Like I'm 5 (ELI5)</span>
+                </div>
+
+                <button id="start-learning-btn" class="primary-btn">
+                    <i class="fa-solid fa-rocket"></i> Start Learning
+                </button>
+                
+                <div class="history-section">
+                    <h3>Recent Topics</h3>
+                    <ul id="history-list">
+                        <!-- History items injected here -->
+                    </ul>
+                </div>
+            </aside>
+
+            <!-- Chat Interface -->
+            <main class="chat-container">
+                <div class="chat-messages" id="chat-messages" aria-live="polite">
+                    <!-- Welcome Message -->
+                    <div class="message ai-message">
+                        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="message-content">
+                            <p>Hello! I'm your AI Learning Companion. What would you like to learn today? Enter a topic on the left to get started!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="chat-input-area">
+                    <div class="input-wrapper">
+                        <button id="mic-btn" class="icon-btn" aria-label="Voice Input">
+                            <i class="fa-solid fa-microphone"></i>
+                        </button>
+                        <input type="text" id="chat-input" placeholder="Type your answer here..." aria-label="Type your answer" disabled>
+                        <button id="send-btn" class="icon-btn send-btn" aria-label="Send Message" disabled>
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div id="voice-status" class="voice-status hidden">Listening...</div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
