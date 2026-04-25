@@ -311,15 +311,43 @@ class MockAIService {
         });
     }
 
-    async evaluateAnswer(userAnswer, actualAnswer, keyword) {
+    async evaluateAnswer(userAnswer, actualAnswer, keyword, topic) {
         return new Promise((resolve, reject) => {
             setTimeout(() => {
                 if (!userAnswer || !actualAnswer || !keyword) {
                     return reject(new Error("Missing arguments for evaluation"));
                 }
-                const isCorrect = userAnswer.toLowerCase().includes(actualAnswer.toLowerCase()) || 
-                                  userAnswer.toLowerCase().includes(keyword.toLowerCase());
-                resolve({ isCorrect });
+                // Simple mock evaluation logic aligned with prompt structure
+                const answerLower = userAnswer.toLowerCase();
+                
+                if (answerLower.length < 5) {
+                    return resolve({
+                        isCorrect: false,
+                        feedback: "Incorrect.\n\nYou didn't provide enough detail. It seems you might be missing the core concept.\n\nHint: Try to explain the 'how' or 'why' behind the topic.\n\nTry again!"
+                    });
+                }
+                
+                if (answerLower.includes("don't know") || answerLower.includes("not sure")) {
+                    return resolve({
+                        isCorrect: false,
+                        feedback: "Incorrect.\n\nIt looks like you haven't attempted to apply the concept yet.\n\nHint: Review the step-by-step breakdown above and take a guess.\n\nTry again!"
+                    });
+                }
+                
+                // Randomly succeed or fail for demo purposes
+                const isCorrect = Math.random() > 0.4; // 60% chance of being correct
+                
+                if (isCorrect) {
+                    return resolve({
+                        isCorrect: true,
+                        feedback: `Correct!\n\nYou successfully identified the core mechanics of ${topic}. \n\nDeeper Insight: In advanced real-world applications, this concept is often combined with other modular patterns to massively improve scalability.\n\nReady for next?`
+                    });
+                } else {
+                    return resolve({
+                        isCorrect: false,
+                        feedback: `Incorrect.\n\nYour explanation misses the primary mechanism of how ${topic} operates. You might be confusing its behavior with a similar but distinct concept.\n\nHint: Focus strictly on the main function described in the lesson.\n\nTry again!`
+                    });
+                }
             }, 800);
         });
     }
@@ -593,15 +621,16 @@ class AppController {
             const evalResult = await this.ai.evaluateAnswer(
                 text, 
                 this.state.currentQuizAnswer.answer, 
-                this.state.currentQuizAnswer.answerKeyword
+                this.state.currentQuizAnswer.answerKeyword,
+                this.state.topic
             );
             
             this.ui.hideTypingIndicator();
             
             if (evalResult && evalResult.isCorrect) {
-                this.handleCorrectAnswer();
+                this.handleCorrectAnswer(evalResult.feedback);
             } else {
-                await this.handleIncorrectAnswer();
+                await this.handleIncorrectAnswer(evalResult ? evalResult.feedback : null);
             }
         } catch(error) {
             console.error("Evaluation Error:", error);
@@ -617,7 +646,7 @@ class AppController {
         this.ui.setInputsEnabled(true);
     }
 
-    handleCorrectAnswer() {
+    handleCorrectAnswer(aiFeedback = "") {
         this.state.score += 10;
         this.state.save();
         
@@ -627,11 +656,28 @@ class AppController {
         this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty, "Great job! You're improving!", "positive");
         
         const frag = document.createDocumentFragment();
-        const p1 = document.createElement('p');
-        p1.style.color = "var(--success-color)";
-        const strong = document.createElement('strong');
-        strong.textContent = "Correct!";
-        p1.appendChild(strong);
+        
+        if (aiFeedback) {
+            const paragraphs = aiFeedback.split('\n').filter(p => p.trim() !== '');
+            paragraphs.forEach(text => {
+                const p = document.createElement('p');
+                if (text.startsWith('Correct!')) {
+                    p.style.color = "var(--success-color)";
+                    p.innerHTML = `<strong>${text}</strong>`;
+                } else if (text.startsWith('Deeper Insight:')) {
+                    p.style.color = "var(--accent-color)";
+                    p.innerHTML = `<em>${text}</em>`;
+                } else {
+                    p.textContent = text;
+                }
+                frag.appendChild(p);
+            });
+        } else {
+            const p1 = document.createElement('p');
+            p1.style.color = "var(--success-color)";
+            p1.innerHTML = `<strong>Correct!</strong>`;
+            frag.appendChild(p1);
+        }
         
         const p2 = document.createElement('p');
         p2.textContent = difficultyMsg;
@@ -639,7 +685,6 @@ class AppController {
         const p3 = document.createElement('p');
         p3.textContent = "Want to learn something else, or dive deeper? Enter a new topic or ask a follow up question.";
         
-        frag.appendChild(p1);
         frag.appendChild(p2);
         frag.appendChild(p3);
         
@@ -647,7 +692,7 @@ class AppController {
         this.state.isWaitingForQuizAnswer = false;
     }
 
-    async handleIncorrectAnswer() {
+    async handleIncorrectAnswer(aiFeedback = "") {
         const { msg, shouldRevise } = this.state.levelDown();
         
         if (this.state.isEli5) {
@@ -660,24 +705,37 @@ class AppController {
         this.ui.updateScoreDisplay(this.state.score, this.state.maxScore, this.state.difficulty, feedbackMsg, "warning");
         
         const frag = document.createDocumentFragment();
-        const p1 = document.createElement('p');
-        p1.style.color = "var(--warning-color)";
-        const strong = document.createElement('strong');
-        strong.textContent = "Not quite right.";
-        p1.appendChild(strong);
+        
+        if (aiFeedback) {
+            const paragraphs = aiFeedback.split('\n').filter(p => p.trim() !== '');
+            paragraphs.forEach(text => {
+                const p = document.createElement('p');
+                if (text.startsWith('Incorrect.')) {
+                    p.style.color = "var(--warning-color)";
+                    p.innerHTML = `<strong>${text}</strong>`;
+                } else if (text.startsWith('Hint:')) {
+                    p.style.color = "var(--accent-color)";
+                    p.innerHTML = `<em>${text}</em>`;
+                } else {
+                    p.textContent = text;
+                }
+                frag.appendChild(p);
+            });
+        } else {
+            const p1 = document.createElement('p');
+            p1.style.color = "var(--warning-color)";
+            p1.innerHTML = `<strong>Not quite right.</strong>`;
+            frag.appendChild(p1);
+        }
         
         const p2 = document.createElement('p');
         p2.textContent = msg;
-        
-        frag.appendChild(p1);
         frag.appendChild(p2);
         
         if (shouldRevise) {
             const p3 = document.createElement('p');
             p3.style.color = "var(--accent-color)";
-            const em = document.createElement('em');
-            em.textContent = "Tip: Try reading the step-by-step breakdown below carefully, or ask me for an analogy.";
-            p3.appendChild(em);
+            p3.innerHTML = `<em>Tip: Try reading the step-by-step breakdown below carefully, or ask me for an analogy.</em>`;
             frag.appendChild(p3);
         }
         
